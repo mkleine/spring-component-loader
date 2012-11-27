@@ -2,14 +2,21 @@ package net.mkleine.component;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.ApplicationContextInitializer;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.env.MutablePropertySources;
 import org.springframework.core.env.PropertySource;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.ResourcePropertySource;
+import org.springframework.web.WebApplicationInitializer;
 import org.springframework.web.context.ConfigurableWebApplicationContext;
+import org.springframework.web.context.ContextLoaderListener;
+import org.springframework.web.context.WebApplicationContext;
+import org.springframework.web.context.support.XmlWebApplicationContext;
 
+import javax.servlet.ServletContext;
+import javax.servlet.ServletContextEvent;
+import javax.servlet.ServletContextListener;
+import javax.servlet.ServletException;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -20,25 +27,25 @@ import java.util.List;
 
  Loading order (first has higher precedence than last):
  1. system properties
- 2. jndi entries from java:comp/env/<your_framework_name>/application as properties
+ 2. jndi entries from java:comp/env/spring_components/application as properties
  3. application.xml/application.properties (if available)
  4. component-*.xml / component-*.properties from /WEB-INF/
- 5. component-*.xml / component-*.properties from /META-INF/<your_framework_name>/
+ 5. component-*.xml / component-*.properties from /META-INF/spring_components/
 
- <components:resource type="properties" location="jndi:java:comp/env/<your_framework_name>/application/"/>
+ <components:resource type="properties" location="jndi:java:comp/env/spring_components/application/"/>
  <components:resource type="properties" location="/WEB-INF/application.properties"/>
  <components:resource type="beans" location="/WEB-INF/application.xml"/>
 
  <components:component name="*"/>
  <components:directory location="/WEB-INF"/>
- <components:directory location="classpath*:/META-INF/<your_framework_name>"/>
+ <components:directory location="classpath*:/META-INF/spring_components"/>
 
  </components:load>
  */
 @SuppressWarnings("UnusedDeclaration")
-public class ComponentContextInitializer implements ApplicationContextInitializer<ConfigurableApplicationContext> {
+public class ComponentLoader implements WebApplicationInitializer {
 
-  private static final Logger LOG = LoggerFactory.getLogger(ComponentContextInitializer.class);
+  private static final Logger LOG = LoggerFactory.getLogger(ComponentLoader.class);
 
   static final String[] configLocations = new String[] {
           "/WEB-INF/application.xml",
@@ -52,11 +59,13 @@ public class ComponentContextInitializer implements ApplicationContextInitialize
           "classpath*:/META-INF/spring_components/component-*.properties"
   };
 
-  private void configureContextLocations(ConfigurableWebApplicationContext context) {
+  private final XmlWebApplicationContext rootContext = new XmlWebApplicationContext();
+
+  private XmlWebApplicationContext configureContextLocations() {
     final List<String> existingConfigLocations = new ArrayList<String>(configLocations.length);
     for(String configLocation : configLocations) {
       try {
-        final Resource[] resources = context.getResources(configLocation);
+        final Resource[] resources = rootContext.getResources(configLocation);
         for(Resource resource : resources) {
           if(resource.exists()) {
             existingConfigLocations.add(configLocation);
@@ -70,15 +79,16 @@ public class ComponentContextInitializer implements ApplicationContextInitialize
     }
     final String[] locations = new String[existingConfigLocations.size()];
     existingConfigLocations.toArray(locations);
-    context.setConfigLocations(locations);
+    rootContext.setConfigLocations(locations);
+    return rootContext;
   }
 
-  private void configurePropertySources(ConfigurableApplicationContext context) {
-    // modify property sources (add our behind the existing system, servlet context and JNDI properties
-    final MutablePropertySources sources = context.getEnvironment().getPropertySources();
+  private void configurePropertySources() {
+    // modify property sources (add our behind the existing system, servlet rootContext and JNDI properties
+    final MutablePropertySources sources = rootContext.getEnvironment().getPropertySources();
     for(String propertyLocation : propertyLocations) {
       try {
-        final Resource[] resources = context.getResources(propertyLocation);
+        final Resource[] resources = rootContext.getResources(propertyLocation);
         for(Resource resource : resources) {
           if(resource.exists()) {
             sources.addLast(new ResourcePropertySource(resource));
@@ -90,7 +100,7 @@ public class ComponentContextInitializer implements ApplicationContextInitialize
     }
 
 
-    if(context.getEnvironment().getProperty("net.mkleine.component.verbose", Boolean.class, false)){
+    if(rootContext.getEnvironment().getProperty("net.mkleine.component.verbose", Boolean.class, false)){
       // dump properties
       final Iterable<PropertySource<?>> iterator = new Iterable<PropertySource<?>>() {
         @Override
@@ -119,9 +129,18 @@ public class ComponentContextInitializer implements ApplicationContextInitialize
   }
 
   @Override
-  public void initialize(ConfigurableApplicationContext configurableApplicationContext) {
-    LOG.warn("--------------------------------customizeContext ------------------------");
-    configureContextLocations((ConfigurableWebApplicationContext) configurableApplicationContext);
-    configurePropertySources(configurableApplicationContext);
+  public void onStartup(ServletContext servletContext) throws ServletException {
+
+    LOG.warn("-------------------------------- onStartup ------------------------");
+
+    servletContext.addListener(new ContextLoaderListener(rootContext) {
+      @Override
+      protected void customizeContext(ServletContext servletContext, ConfigurableWebApplicationContext applicationContext) {
+        LOG.warn("--------------------------------customizeContext ------------------------");
+        configureContextLocations();
+        configurePropertySources();
+        super.customizeContext(servletContext, applicationContext);
+      }
+    });
   }
 }
