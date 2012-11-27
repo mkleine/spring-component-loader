@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<web-fragment version="3.0"
+              xmlns="http://java.sun.com/xml/ns/javaee"
+              xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+              xsi:schemaLocation="http://java.sun.com/xml/ns/javaee
+              http://java.sun.com/xml/ns/javaee/web-fragment_3_0.xsd">
+
+  <name>component_loader</name>
+
+  <listener>
+    <description>
+      Creates root application context by loading components.
+    </description>
+    <listener-class>net.mkleine.component.ComponentLoader</listener-class>
+  </listener>
+
+  <!--
+    <listener>
+    <description>
+      Creates root application context by loading components.
+    </description>
+    <listener-class>org.springframework.web.context.ContextLoaderListener</listener-class>
+  </listener>
+
+  <context-param>
+    <param-name>contextInitializerClasses</param-name>
+    <param-value>net.mkleine.component.ComponentContextInitializer</param-value>
+  </context-param>
+  -->
+
+</web-fragment>
